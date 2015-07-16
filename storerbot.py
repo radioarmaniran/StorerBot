@@ -77,6 +77,7 @@ DEFAULT_FULL_MIMETYPE_ICONS = {'application/epub+zip':'📖',
                                'application/pgp-signature':'🔏',
                                'application/pkcs7-mime':'🔒',
                                'application/pkcs7-signature':'🔏',
+                               'application/vnd.android.package-archive':'📦',
                                'application/vnd.ms-publisher':'🔑',
                                'application/vnd.oasis.opendocument.spreadsheet':'📊',
                                'application/x-executable':'💡',
@@ -96,9 +97,13 @@ DEFAULT_FULL_MIMETYPE_ICONS = {'application/epub+zip':'📖',
                                'image/jpeg':'🌇',
                                'image/png':'🌌',
                                'image/svg+xml':'➰',
+                               'image/x-xcf':'🌠',
                                'image/webp':'🌀',
                                'telegram/audio':'🔈',
                                'telegram/contact':'👤',
+                               'telegram/photo':'📷',
+                               'telegram/location':'📍',
+                               'telegram/message':'💬',
                                'text/css':'🎨',
                                'text/html':'🌐',
                                'text/x-c++src':'👾',
@@ -107,12 +112,10 @@ DEFAULT_FULL_MIMETYPE_ICONS = {'application/epub+zip':'📖',
                                'text/x-markdown':'📓',
                                'text/x-python':'🐍'}
 
-DEFAULT_MIMETYPE_ICONS = {'message':'💬',
-                          'audio':'🎵',
+DEFAULT_MIMETYPE_ICONS = {'audio':'🎵',
                           'text':'📄',
                           'image':'🌇',
                           'video':'🎬',
-                          'location':'📍',
                           'application':'🔴'}
 
 DEFAULT_ICON = '❔'
@@ -275,13 +278,12 @@ def open_element(chat_id,element_path):
         if element['mime_type'] == 'folder':
             users.update_conf(chat_id, 'General', 'position', element_path)
             display_folder(chat_id,storage,element_path)
-        elif element['mime_type'] == 'audio/telegram':
+        elif element['mime_type'] == 'telegram/audio' or element['mime_type'] == 'audio/telegram':
             methods.send_audio(chat_id,
                                element['file_id'])
             display_folder(chat_id,storage,element_path[0:-1])
         elif element['mime_type'] == 'telegram/contact':
             profile_photo = methods.get_user_profile_photos(element['user_id'],limit = 1)
-            print(profile_photo['result']['photos'][0])
             methods.send_photo(chat_id,
                                profile_photo['result']['photos'][0][0]['file_id'],
                                element['first_name'] + ' ' + element['last_name'] + '\n' +\
@@ -290,6 +292,19 @@ def open_element(chat_id,element_path):
                                  element['first_name'] + ' ' + element['last_name'] + '\n' +\
                                     '+' + element['phone_number'] + '\n' +\
                                     str(element['user_id']))
+            display_folder(chat_id,storage,element_path[0:-1])
+        elif element['mime_type'] == 'telegram/location':
+            methods.send_location(chat_id, element['latitude'], element['longitude'])
+            display_folder(chat_id,storage,element_path[0:-1])
+        elif element['mime_type'] == 'telegram/message':
+            methods.forward_message(chat_id,
+                                    chat_id,
+                                    element['message_id'])
+            display_folder(chat_id,storage,element_path[0:-1])
+        elif element['mime_type'] == 'telegram/photo':
+            methods.send_photo(chat_id,
+                               element['file_id'])
+            display_folder(chat_id,storage,element_path[0:-1])
         else:
             methods.send_document(chat_id,
                                   element['file_id'])
@@ -550,12 +565,12 @@ def perform(chat_id, text):
     else:
         responses =literal_eval(users.get_conf_value(chat_id, 'General',
                                          'responses', '{}'))
-                                         
+
         try:
             text = responses[text]
         except KeyError:
             pass
-            
+
         open_element(chat_id,position + [text])
 
 
@@ -570,7 +585,7 @@ def document_sended(chat_id, document):
         position = literal_eval(users.get_conf_value(chat_id, 'General',
                                                  'position', '[]'))
 
-        file_name = document['file_name']
+        file_name = document['file_name'].replace('\'','\\\'')
         document['icon'] = None
 
         if file_name in get_element(storage,position)['content'].keys():
@@ -585,17 +600,17 @@ def document_sended(chat_id, document):
 
 def correct(file_name):
     file_name = file_name.split('.')
-    print(file_name)
+    #print(file_name)
     if len(file_name) == 1:
         matches = re.findall('\((\d+)\)$',file_name[0])
-        print(matches)
+        #print(matches)
         if matches == []:
             file_name = file_name[0] + '(1)'
         else:
             file_name = re.findall('(.*)\(\d+\)$',file_name[0])[0] + '(' + str(int(matches[0])+1) + ')'
     else:
         matches = re.findall('\((\d+)\)$',file_name[0])
-        print(matches)
+        #print(matches)
         if matches == []:
             file_name = file_name[0] + '(1).' + file_name[1]
         else:
@@ -614,17 +629,12 @@ def run():
         except:
             pass
         for update in updates['result']:
-            try:
-                if 'text' in update['message'].keys():
-                    threading.Thread(
-                        target=perform(
-                            int(update['message']['chat']['id']),
-                            update['message']['text'])
-                        ).start()
-                elif 'audio' in update['message'].keys():
+            #try:
+                print(update)
+                if 'audio' in update['message'].keys():
                     audio = update['message']['audio']
                     audio['file_name'] =  format(datetime.now(),'audio_%Y-%m-%d_%H-%M-%S.ogg')
-                    audio['mime_type'] = 'audio/telegram'
+                    audio['mime_type'] = 'telegram/audio'
                     threading.Thread(
                         target=document_sended(
                             int(update['message']['chat']['id']),
@@ -637,15 +647,23 @@ def run():
                             update['message']['document'])
                         ).start()
                 elif 'photo' in update['message'].keys():
-                    chat_id = int(update['message']['chat']['id'])
-                    methods.send_message(chat_id, '⛔ To save an image attach it as a file (uncompressed), not as a photo')
-                    display_folder(chat_id,
-                                literal_eval(users.get_conf_value(chat_id,
-                                                        'General',
-                                                        'storage',
-                                                        str(DEFAULT_FOLDER_STRUCTURE))),
-                                literal_eval(users.get_conf_value(chat_id, 'General',
-                                                    'position', '[]')))
+                    photo = update['message']['photo'][0]
+                    photo['file_name'] =  format(datetime.now(),'photo_%Y-%m-%d_%H-%M-%S.jpg')
+                    photo['mime_type'] = 'telegram/photo'
+                    threading.Thread(
+                        target=document_sended(
+                            int(update['message']['chat']['id']),
+                            photo)
+                        ).start()
+                    #chat_id = int(update['message']['chat']['id'])
+                    #methods.send_message(chat_id, '⛔ To save an image attach it as a file (uncompressed), not as a photo')
+                    #display_folder(chat_id,
+                                #literal_eval(users.get_conf_value(chat_id,
+                                                        #'General',
+                                                        #'storage',
+                                                        #str(DEFAULT_FOLDER_STRUCTURE))),
+                                #literal_eval(users.get_conf_value(chat_id, 'General',
+                                                    #'position', '[]')))
                 elif 'sticker' in update['message'].keys():
                     sticker = update['message']['sticker']
                     sticker['file_name'] = format(datetime.now(),'sticker_%Y-%m-%d_%H-%M-%S.webp')
@@ -664,6 +682,33 @@ def run():
                             int(update['message']['chat']['id']),
                             contact)
                         ).start()
+                elif 'location' in update['message'].keys():
+                    location = update['message']['location']
+                    location['file_name'] = str(location['longitude']) + ',' +\
+                        str(location['latitude'])
+                    location['mime_type'] = 'telegram/location'
+                    threading.Thread(
+                        target=document_sended(
+                            int(update['message']['chat']['id']),
+                            location)
+                        ).start()
+                elif 'forward_from' in update['message'].keys():
+                    message = {'file_name': 'message from ' + update['message']['forward_from']['first_name'],
+                               'mime_type': 'telegram/message',
+                               'message_id': update['message']['message_id'],
+                               'forward_from': update['message']['forward_from'],
+                               'forward_date': update['message']['forward_date']}
+                    threading.Thread(
+                        target=document_sended(
+                            int(update['message']['chat']['id']),
+                            message)
+                        ).start()
+                elif 'text' in update['message'].keys():
+                    threading.Thread(
+                        target=perform(
+                            int(update['message']['chat']['id']),
+                            update['message']['text'])
+                        ).start()
                 else:
                     chat_id = int(update['message']['chat']['id'])
                     methods.send_message(chat_id, '⛔ Unsuported media')
@@ -675,9 +720,9 @@ def run():
                                 literal_eval(users.get_conf_value(chat_id, 'General',
                                                     'position', '[]')))
 
-            except:
-                methods.send_message(int(update['message']['chat']['id']),
-                                     str(sys.exc_info()))
+            #except:
+                #methods.send_message(int(update['message']['chat']['id']),
+                                     #str(sys.exc_info()))
 
 
 
