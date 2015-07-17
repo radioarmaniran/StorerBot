@@ -98,12 +98,15 @@ DEFAULT_FULL_MIMETYPE_ICONS = {'application/epub+zip':'📖',
                                'image/png':'🌌',
                                'image/svg+xml':'➰',
                                'image/x-xcf':'🌠',
-                               'image/webp':'🌀',
+                               'image/webp':'😃',
                                'telegram/audio':'🔈',
-                               'telegram/contact':'👤',
-                               'telegram/photo':'📷',
+                               'telegram/contact':'📱',
                                'telegram/location':'📍',
                                'telegram/message':'💬',
+                               'telegram/photo':'📷',
+                               'telegram/url-chat':'👥',
+                               'telegram/url-contact':'👤',
+                               'telegram/url-stickerpack':'🎁',
                                'text/css':'🎨',
                                'text/html':'🌐',
                                'text/x-c++src':'👾',
@@ -304,6 +307,18 @@ def open_element(chat_id,element_path):
         elif element['mime_type'] == 'telegram/photo':
             methods.send_photo(chat_id,
                                element['file_id'])
+            display_folder(chat_id,storage,element_path[0:-1])
+        elif element['mime_type'] == 'telegram/url-stickerpack':
+            methods.send_message(chat_id,
+                                 'https://telegram.me/addstickers/' + element['stickerpack_name'])
+            display_folder(chat_id,storage,element_path[0:-1])
+        elif element['mime_type'] == 'telegram/url-chat':
+            methods.send_message(chat_id,
+                                 'https://telegram.me/joinchat/' + element['group_name'])
+            display_folder(chat_id,storage,element_path[0:-1])
+        elif element['mime_type'] == 'telegram/url-contact':
+            methods.send_message(chat_id,
+                                 'https://telegram.me/' + element['contact_name'])
             display_folder(chat_id,storage,element_path[0:-1])
         else:
             methods.send_document(chat_id,
@@ -629,7 +644,7 @@ def run():
         except:
             pass
         for update in updates['result']:
-            #try:
+            try:
                 print(update)
                 if 'audio' in update['message'].keys():
                     audio = update['message']['audio']
@@ -704,11 +719,42 @@ def run():
                             message)
                         ).start()
                 elif 'text' in update['message'].keys():
-                    threading.Thread(
-                        target=perform(
-                            int(update['message']['chat']['id']),
-                            update['message']['text'])
-                        ).start()
+                    text = update['message']['text']
+                    if text.startswith('https://telegram.me/addstickers/'):
+                        stickerpack = {'file_name': re.findall('https://telegram.me/addstickers/(.*)',text)[0],
+                                       'mime_type': 'telegram/url-stickerpack',
+                                       'stickerpack_name': re.findall('https://telegram.me/addstickers/(.*)',text)[0]}
+                        threading.Thread(
+                            target=document_sended(
+                                int(update['message']['chat']['id']),
+                                stickerpack)
+                            ).start()
+                    
+                    elif text.startswith('https://telegram.me/joinchat/'):
+                        group = {'file_name': re.findall('https://telegram.me/joinchat/(.*)',text)[0],
+                                 'mime_type': 'telegram/url-chat',
+                                 'group_name': re.findall('https://telegram.me/joinchat/(.*)',text)[0]}
+                        threading.Thread(
+                            target=document_sended(
+                                int(update['message']['chat']['id']),
+                                group)
+                            ).start() 
+                    
+                    elif text.startswith('https://telegram.me/'):
+                        group = {'file_name': re.findall('https://telegram.me/(.*)',text)[0],
+                                 'mime_type': 'telegram/url-contact',
+                                 'contact_name': re.findall('https://telegram.me/(.*)',text)[0]}
+                        threading.Thread(
+                            target=document_sended(
+                                int(update['message']['chat']['id']),
+                                group)
+                            ).start() 
+                    else:
+                        threading.Thread(
+                            target=perform(
+                                int(update['message']['chat']['id']),
+                                update['message']['text'])
+                            ).start()
                 else:
                     chat_id = int(update['message']['chat']['id'])
                     methods.send_message(chat_id, '⛔ Unsuported media')
@@ -720,9 +766,9 @@ def run():
                                 literal_eval(users.get_conf_value(chat_id, 'General',
                                                     'position', '[]')))
 
-            #except:
-                #methods.send_message(int(update['message']['chat']['id']),
-                                     #str(sys.exc_info()))
+            except:
+                methods.send_message(int(update['message']['chat']['id']),
+                                     'Unexpected ERROR, send this message to @RJornetC to report:\n' + xstr(sys.exc_info()))
 
 
 
